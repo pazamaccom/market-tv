@@ -26,7 +26,19 @@ enum Theme {
         case "adverse": return adverse
         case "supportive": return supportive
         case "mixed": return mixed
+        case "partial": return unavailable
         default: return unavailable
+        }
+    }
+
+    /// Chip colours for snapshot.card_signals levels and trends (cards.js chip kinds).
+    static func chip(_ kind: String?) -> Color {
+        switch kind {
+        case "alert", "worsening": return adverse
+        case "caution": return mixed
+        case "benign", "improving": return supportive
+        case "nodata", nil: return unavailable
+        default: return muted
         }
     }
 

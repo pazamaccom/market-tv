@@ -28,29 +28,79 @@ struct HealthView: View {
         let s = market.snapshot
         guard s.exists else { return settings.marketBase }
         var parts = ["Assessment \(s["cutoff"].string ?? "—")"]
-        if let status = s["status"].string { parts.append(status) }
-        if let reading = s["daily_view"]["assessment"].string { parts.append(reading) }
+        // Like visibleCorrection() in app.js: a restatement is mentioned only when it changed something shown.
+        if s["status"].string == "restated", !s["restatement_display_changes"].array.isEmpty { parts.append("restated") }
+        if let data = s["data_status"]["text"].string { parts.append(data) }
         return parts.joined(separator: " · ")
     }
 
-    // MARK: Overall reading (dashboard's own interpretRecord output)
+    // MARK: Overall reading
+
+    /// market_interpretation_v2 is the dashboard's verdict and pillar list; v1 (interpretRecord) is the fallback.
+    private var v2: J { market.snapshot["market_interpretation_v2"] }
+
+    private var verdict: (text: String, tone: String?) {
+        guard let v = v2["verdict"].string else { return (market.model["healthText"].string ?? "", market.model["healthTone"].string) }
+        switch v {
+        case "Worsening": return ("↓ WORSENING", "adverse")
+        case "Improving": return ("↑ IMPROVING", "supportive")
+        case "Partial": return ("PARTIAL", "partial")
+        default: return ("→ \(v.uppercased())", "mixed")
+        }
+    }
+
+    /// Same grouping and order as pillarGroups() in app.js.
+    private var pillarGroups: [(state: String, labels: [String])] {
+        ["Worsening", "Improving", "Unchanged", "Benign", "Missing"].compactMap { state in
+            let labels = v2["pillars"].array.filter { $0["state"].string == state }.compactMap { $0["label"].string }
+            return labels.isEmpty ? nil : (state, labels)
+        }
+    }
+
+    private func pillarColor(_ state: String) -> Color {
+        switch state {
+        case "Worsening": return Theme.adverse
+        case "Improving", "Benign": return Theme.supportive
+        case "Missing": return Theme.unavailable
+        default: return Theme.muted
+        }
+    }
 
     private var interpretation: some View {
         let m = market.model
+        let v = verdict
         return Panel {
-            if m.exists {
+            if v2.exists || m.exists {
                 HStack(alignment: .top, spacing: 28) {
-                    Text(m["healthText"].string ?? "")
-                        .font(.system(size: 30, weight: .heavy))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 20).padding(.vertical, 12)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tone(m["healthTone"].string)))
-                        .fixedSize()
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(m["headline"].string ?? "").font(.system(size: 28, weight: .bold)).foregroundStyle(Theme.ink)
-                        Text([m["summary"].string, m["context"].string].compactMap { $0 }.joined(separator: " "))
-                            .font(.system(size: 23)).foregroundStyle(Theme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(v.text)
+                            .font(.system(size: 30, weight: .heavy))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 20).padding(.vertical, 12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Theme.tone(v.tone)))
+                            .fixedSize()
+                        if v2.exists { Text("last 4 weeks").font(.system(size: 19)).foregroundStyle(Theme.muted) }
+                    }
+                    if v2.exists {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(pillarGroups.map { "\($0.labels.count) \($0.state.lowercased())" }.joined(separator: " · "))
+                                .font(.system(size: 26, weight: .bold)).foregroundStyle(Theme.ink)
+                            ForEach(pillarGroups, id: \.state) { g in
+                                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                                    Text(g.state).font(.system(size: 22, weight: .bold)).foregroundStyle(pillarColor(g.state))
+                                        .frame(width: 160, alignment: .leading)
+                                    Text(g.labels.joined(separator: " · ")).font(.system(size: 22)).foregroundStyle(Theme.ink)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(m["headline"].string ?? "").font(.system(size: 28, weight: .bold)).foregroundStyle(Theme.ink)
+                            Text([m["summary"].string, m["context"].string].compactMap { $0 }.joined(separator: " "))
+                                .font(.system(size: 23)).foregroundStyle(Theme.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
             } else {

@@ -48,6 +48,7 @@ struct RootView: View {
                         case "drawdown": DrawdownSection()
                         case "yield": YieldSection()
                         case "alpha": AlphaSection()
+                        case "btc": BTCSection()
                         default: if let card = HubCatalog.card(id) { DashboardInfoView(card: card) }
                         }
                     case .dashboard(let id):
@@ -56,9 +57,9 @@ struct RootView: View {
                 }
         }
         .background(HubPalette.background.ignoresSafeArea())
-        // Daily record: every 5 minutes. Today: every minute. Hub status: every 30 seconds (hub caches 15 s).
+        // Daily record (about 10 MB): every 15 minutes. Today: every minute. Hub status: every 30 seconds (hub caches 15 s).
         .task(id: "m|\(settings.marketBase)|\(settings.demoMode)|\(settings.refreshToken)") {
-            await repeating(300) { await market.refresh(base: settings.marketBase, demo: settings.demoMode) }
+            await repeating(900) { await market.refresh(base: settings.marketBase, demo: settings.demoMode) }
         }
         .task(id: "t|\(settings.marketBase)|\(settings.demoMode)|\(settings.refreshToken)") {
             await repeating(60) { await today.refresh(base: settings.marketBase, demo: settings.demoMode) }

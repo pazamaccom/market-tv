@@ -25,14 +25,24 @@ enum API {
         return URLSession(configuration: c)
     }()
 
-    static func data(_ base: String, _ path: String) async throws -> Data {
+    /// For the Market Health daily record (/api/latest, about 10 MB uncompressed in Oct 2026).
+    private static let largeSession: URLSession = {
+        let c = URLSessionConfiguration.ephemeral
+        c.timeoutIntervalForRequest = 45
+        c.timeoutIntervalForResource = 120
+        c.requestCachePolicy = .reloadIgnoringLocalCacheData
+        c.waitsForConnectivity = false
+        return URLSession(configuration: c)
+    }()
+
+    static func data(_ base: String, _ path: String, large: Bool = false) async throws -> Data {
         var trimmed = base.trimmingCharacters(in: .whitespacesAndNewlines)
         while trimmed.hasSuffix("/") { trimmed.removeLast() }
         guard let url = URL(string: trimmed + path), url.scheme != nil else { throw APIError.badURL(trimmed + path) }
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("no-store", forHTTPHeaderField: "Cache-Control")
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await (large ? largeSession : session).data(for: request)
         let code = (response as? HTTPURLResponse)?.statusCode ?? 0
         guard (200..<300).contains(code) else {
             throw APIError.http(code, String(decoding: data.prefix(200), as: UTF8.self))

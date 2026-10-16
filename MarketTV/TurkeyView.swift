@@ -7,7 +7,8 @@ struct TurkeySection: View {
     @StateObject private var feed = FeedStore()
 
     static let paths = ["/api/summary", "/api/holdings", "/api/history", "/api/live-fx",
-                        "/api/carry-risk-score", "/api/carry-risk-history", "/api/carry-summary", "/api/data-freshness"]
+                        "/api/carry-risk-score", "/api/carry-risk-history", "/api/carry-summary", "/api/data-freshness",
+                        "/api/narrative-latest"]
 
     var body: some View {
         TabView {
@@ -143,6 +144,7 @@ struct TurkeyCarry: View {
             if let e = feed.error { Banner(text: e) }
             if c.exists {
                 headline(c)
+                narrative
                 buckets(c)
                 HStack(alignment: .top, spacing: 18) {
                     LineChartPanel(title: "Composite carry-risk score",
@@ -154,6 +156,39 @@ struct TurkeyCarry: View {
                 freshness
             } else if !feed.attempted {
                 LoadingLine(text: "Loading carry risk…")
+            }
+        }
+    }
+
+    /// AI commentary, as in the web's risk-monitor card (renderIntelligenceNarrative).
+    @ViewBuilder private var narrative: some View {
+        let n = feed["/api/narrative-latest"]["data"]
+        if let text = n["narrative_text"].string, !text.isEmpty {
+            let severity = n["severity"].string?.lowercased()
+            let color = severity == "red" ? Theme.adverse : severity == "amber" ? Theme.mixed : severity == "green" ? Theme.supportive : Theme.accent
+            let generated = n["generated_at"].string ?? ""
+            // generated_at has no time zone; like the web page, read it as local time.
+            let local: Date? = {
+                let f = DateFormatter()
+                f.locale = Locale(identifier: "en_US_POSIX")
+                f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+                return f.date(from: String(generated.prefix(19)))
+            }()
+            let hours = local.map { Date().timeIntervalSince($0) / 3600 }
+            let age = hours.flatMap { $0 > 6 ? " · last updated \($0 < 48 ? "\(Int($0.rounded())) hours" : "\(Int(($0 / 24).rounded())) days") ago" : nil } ?? ""
+            Panel {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 14) {
+                        Text("AI COMMENTARY").font(.system(size: 18, weight: .heavy)).foregroundStyle(Theme.muted)
+                        if let severity { Pill(text: severity.uppercased(), color: color, size: 17) }
+                    }
+                    Text(text).font(.system(size: 24)).foregroundStyle(Theme.ink).fixedSize(horizontal: false, vertical: true)
+                    if let trigger = n["trigger_detail"].string {
+                        Text("Triggered by: \(trigger)").font(.system(size: 19)).foregroundStyle(Theme.muted).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text("Generated \(generated.replacingOccurrences(of: "T", with: " ").prefix(16))\(age)")
+                        .font(.system(size: 18)).foregroundStyle(hours.map { $0 > 6 } == true ? Theme.mixed : Theme.muted)
+                }
             }
         }
     }
@@ -203,9 +238,12 @@ struct TurkeyCarry: View {
             ForEach(names, id: \.0) { key, label in
                 let b = c["buckets"][key]
                 let delta = c["bucket_deltas"][key].finite
+                // Each bucket has its own comparison date; the web adds the age when it is older than a week.
+                let vs = c["bucket_deltas_vs_per_bucket"][key].string ?? c["bucket_deltas_vs"].string
+                let age = c["bucket_deltas_age_days"][key].int.flatMap { $0 > 7 ? " (\($0)d ago)" : nil } ?? ""
                 KPI(title: "\(label) · weight \(Fmt.fixed(b["weight"].finite.map { $0 * 100 }, 0, "%"))",
                     value: Fmt.fixed(b["score"].finite, 1),
-                    sub: "\(Fmt.signed(delta, 1)) vs \(Fmt.dayLabel(c["bucket_deltas_vs"].string))",
+                    sub: "\(Fmt.signed(delta, 1)) vs \(Fmt.dayLabel(vs))\(age)",
                     color: Theme.ink)
             }
         }
@@ -284,7 +322,7 @@ struct TurkeyCarry: View {
                     let st = r["status"].string ?? "—"
                     FocusRow {
                         HStack(spacing: 14) {
-                            Pill(text: st.uppercased(), color: st == "fresh" ? Theme.supportive : st == "amber" ? Theme.mixed : Theme.adverse)
+                            Pill(text: st.uppercased(), color: st == "fresh" ? Theme.supportive : st == "stale" || st == "amber" ? Theme.mixed : Theme.adverse)
                             Text(r["name"].string ?? "").font(.system(size: 21, weight: .semibold)).foregroundStyle(Theme.ink).lineLimit(1)
                             Spacer()
                             Text("\(Fmt.fixed(r["hours_since_update"].finite, 0)) h ago").font(.system(size: 19)).foregroundStyle(Theme.muted)

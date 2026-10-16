@@ -14,8 +14,9 @@ struct HubCard: Identifiable {
     let art: CGRect
 
     var color: Color { Color(hex: accent) }
-    /// Every dashboard has a TV screen except the BTC bot, which is not live yet.
-    var onTV: Bool { id != "btc" }
+    /// Every dashboard now has a TV screen (the BTC bot went live on port 8086). A future card
+    /// without one would return false here and open the QR-code page instead.
+    var onTV: Bool { true }
 }
 
 enum HubCatalog {
@@ -288,7 +289,7 @@ struct HubTile: View {
     }
 }
 
-// MARK: Dashboards that do not have a TV version yet
+// MARK: QR-code page for a dashboard without a TV screen
 
 enum QR {
     static func image(_ text: String) -> UIImage? {
@@ -325,7 +326,7 @@ struct DashboardInfoView: View {
                 Text(card.name).font(.system(size: 58, weight: .bold, design: .serif)).foregroundStyle(HubPalette.text)
                 Text(card.blurb).font(.system(size: 28)).foregroundStyle(HubPalette.muted)
                 StatusLine(online: hub.online[card.id], hubError: hub.error != nil)
-                Text(card.id == "btc" ? "The BTC Trading Bot dashboard is not fully active yet. Its TV screen will be added when it goes live. Meanwhile you can scan the code with your iPhone camera to open the web page (Tailscale must be connected on the phone)." : "Scan the code with your iPhone camera to open this dashboard in Safari; Tailscale must be connected on the phone.")
+                Text("Scan the code with your iPhone camera to open this dashboard in Safari; Tailscale must be connected on the phone.")
                     .font(.system(size: 24)).foregroundStyle(HubPalette.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: 820, alignment: .leading)

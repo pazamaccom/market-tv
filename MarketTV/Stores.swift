@@ -19,7 +19,7 @@ final class MarketStore: ObservableObject {
         loading = true
         defer { loading = false }
         do {
-            let data = try await API.data(base, "/api/latest?mode=\(demo ? "demo" : "live")")
+            let data = try await API.data(base, "/api/latest?mode=\(demo ? "demo" : "live")", large: true)
             let root = try API.parse(data)
             let commit = root["application"]["commit"].string
             // Reload the interpretation code whenever the server's deployed commit changes.
@@ -36,7 +36,7 @@ final class MarketStore: ObservableObject {
             selection = root["selection"]
             self.commit = commit
             if interpreter.isReady {
-                if let m = interpreter.interpret(data) {
+                if let m = interpreter.interpret(Self.interpreterInput(root["snapshot"])) {
                     model = m
                     interpretationError = nil
                 } else {
@@ -49,6 +49,15 @@ final class MarketStore: ObservableObject {
         } catch {
             self.error = API.describe(error)
         }
+    }
+
+    /// interpretRecord() reads metrics, modules.dollar, tracker, source_status and the record identity.
+    /// The bulky research sections (about 9 MB) are left out so JavaScriptCore does not parse them again.
+    private static let notInterpreted: Set<String> = ["observations", "explanations", "signals", "metric_sessions"]
+
+    static func interpreterInput(_ snapshot: J) -> String {
+        guard let s = snapshot.raw as? [String: Any] else { return "null" }
+        return J(s.filter { !notInterpreted.contains($0.key) }).jsonString() ?? "null"
     }
 
     func warning(_ card: J) -> (name: String, meaning: String) {

@@ -49,8 +49,10 @@ final class Interpreter {
         source += String(appJS[begin.lowerBound..<end.upperBound]) + "\n"
 
         hasWarningLanguage = false
+        // The function ends at the next top-level function or marked block, whichever comes first.
         if let w = appJS.range(of: "function warningLanguage("),
-           let next = appJS.range(of: "\nfunction ", range: w.upperBound..<appJS.endIndex) {
+           let next = [appJS.range(of: "\nfunction ", range: w.upperBound..<appJS.endIndex),
+                       appJS.range(of: "\n// BEGIN ", range: w.upperBound..<appJS.endIndex)].compactMap({ $0 }).min(by: { $0.lowerBound < $1.lowerBound }) {
             source += String(appJS[w.lowerBound..<next.lowerBound]) + "\n"
             hasWarningLanguage = true
         }
@@ -69,10 +71,9 @@ final class Interpreter {
         loadedCommit = commit
     }
 
-    /// `latestResponse` is the raw /api/latest body ({snapshot, selection, application}).
-    func interpret(_ latestResponse: Data) -> J? {
+    /// `text` is the record as JSON: the /api/latest body or just its snapshot.
+    func interpret(_ text: String) -> J? {
         guard let ctx = context else { return nil }
-        let text = String(decoding: latestResponse, as: UTF8.self)
         errors.message = nil
         let result = ctx.objectForKeyedSubscript("__interpret")?.call(withArguments: [text])
         if let message = errors.message { lastError = message; return nil }

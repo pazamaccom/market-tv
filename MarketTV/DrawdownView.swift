@@ -91,11 +91,17 @@ struct DrawdownScreen: View {
         let monthly = p["signals"]["monthly"]["rows"].array
         var names: [String: String] = [:]
         for r in daily { if let c = r["column"].string, let n = r["plain_name"].string { names[c] = n } }
-        let onDaily = daily.filter { $0["alarm"].bool == true }
-        let onMonthly = monthly.filter { $0["alarm"].bool == true }
+        // Negative controls are never shown as signals (they test the method, not the market).
+        let isOn = { (r: J) in r["alarm"].bool == true && !(r["status"].string ?? "").contains("negative control") }
+        let onDaily = daily.filter(isOn)
+        let onMonthly = monthly.filter(isOn)
+        let proxy = p["breadth_proxy"]
         return VStack(alignment: .leading, spacing: 10) {
             SectionTitle(text: "Signals on today",
                          note: "Daily \(onDaily.count) of \(daily.count) (\(Fmt.dayLabel(p["signals"]["daily"]["evaluation_day"].string))) · monthly \(onMonthly.count) of \(monthly.count) (\(Fmt.dayLabel(p["signals"]["monthly"]["evaluation_day"].string)))")
+            if proxy["french_stale"].bool == true {
+                Note(text: "The French breadth data is \(proxy["french_release_age_days"].int.map { "\($0) days" } ?? "too") old (last release \(Fmt.dayLabel(proxy["french_last_release"].string))). Breadth signals marked LIVE PROXY use ETF stand-ins and are not validated.")
+            }
             if onDaily.isEmpty && onMonthly.isEmpty {
                 Note(text: "No individual signal is on.")
             }
@@ -106,6 +112,7 @@ struct DrawdownScreen: View {
 
     private func signalRow(_ r: J, names: [String: String], frequency: String) -> some View {
         let column = r["column"].string ?? ""
+        let liveProxy = r["live_proxy"].bool == true
         return FocusRow {
             HStack(alignment: .top, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -119,13 +126,25 @@ struct DrawdownScreen: View {
                     if let beside = r["beside"].string {
                         Text(beside).font(.system(size: 18)).foregroundStyle(Theme.ink).fixedSize(horizontal: false, vertical: true)
                     }
+                    if liveProxy {
+                        HStack(spacing: 10) {
+                            Pill(text: "LIVE PROXY", color: Theme.mixed, size: 16)
+                            Text("\(r["proxy"].string ?? "ETF stand-in") · \(r["status"].string ?? "not validated")")
+                                .font(.system(size: 17)).foregroundStyle(Theme.muted)
+                        }
+                    }
+                    if let caution = r["caution"].string {
+                        Text("Caution: \(caution)").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.mixed)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text("Value \(Fmt.fixed(r["value"].finite, 2))").font(.system(size: 20, weight: .semibold)).foregroundStyle(Theme.ink)
+                    // Many values are small fractions (−0.0288); the web shows 4 decimals for those.
+                    Text("Value \(Fmt.fixed(r["value"].finite, abs(r["value"].finite ?? 0) < 1 ? 4 : 2))").font(.system(size: 20, weight: .semibold)).foregroundStyle(Theme.ink)
                     Text("Percentile \(Fmt.fixed(r["percentile"].finite, 1)) · threshold \(Fmt.fixed(r["threshold"].finite, 0))")
                         .font(.system(size: 17)).foregroundStyle(Theme.muted)
-                    Text("On for \(r["days_on"].int.map(String.init) ?? "—") days · last \(Fmt.dayLabel(r["last_value_period"].string))")
+                    Text("On for \(r["days_on"].int.map(String.init) ?? "—") days · \(liveProxy ? "proxy" : "last") \(Fmt.dayLabel((liveProxy ? r["proxy_day"] : r["last_value_period"]).string))")
                         .font(.system(size: 17)).foregroundStyle(Theme.muted)
                 }
                 .frame(width: 380, alignment: .trailing)

@@ -6,8 +6,8 @@ read-only HTTP GETs to endpoints that already exist; nothing on trader-node chan
 
 | Tab | Source | Refresh |
 |---|---|---|
-| Market Health | `GET /api/latest?mode=live` + `/app.js` (8085) | 5 min |
-| Downturn | `snapshot.downturn_panel` from the same record | 5 min |
+| Market Health | `GET /api/latest?mode=live` + `/app.js` (8085) | 15 min |
+| Downturn | `snapshot.downturn_panel` + `card_signals.downturn` from the same record | 15 min |
 | Today | `GET /api/today?mode=live` (8085) | 1 min |
 | Dashboards | `GET /api/status` (8087) | 30 s |
 | Settings | addresses, demo mode, keep-awake | — |
