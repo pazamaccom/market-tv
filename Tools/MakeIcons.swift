@@ -12,8 +12,10 @@ let fm = FileManager.default
 let info: [String: Any] = ["author": "xcode", "version": 1]
 
 func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> CGColor { CGColor(red: r / 255, green: g / 255, blue: b / 255, alpha: a) }
-let navy = rgb(10, 26, 51), gridC = rgb(22, 44, 78), blue = rgb(7, 91, 203, 150.0 / 255), white = rgb(255, 255, 255), soft = rgb(183, 196, 216)
-let pts: [(CGFloat, CGFloat)] = [(0, 0.62), (0.12, 0.55), (0.24, 0.66), (0.36, 0.48), (0.48, 0.52), (0.60, 0.36), (0.72, 0.42), (0.84, 0.24), (0.96, 0.30)]
+func hex(_ v: UInt32, _ a: CGFloat = 1) -> CGColor { rgb(CGFloat((v >> 16) & 255), CGFloat((v >> 8) & 255), CGFloat(v & 255), a) }
+let white = rgb(255, 255, 255), soft = rgb(183, 196, 216)
+// Yield-curve ribbons in the hub's Yield, Market and Turkey card colours.
+let ribbonColors: [UInt32] = [0xA269FF, 0x00BAFF, 0xFF365E]
 
 func writeJSON(_ obj: Any, _ path: String) {
     try! fm.createDirectory(atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
@@ -35,38 +37,67 @@ func save(_ img: CGImage, _ path: String) {
     CGImageDestinationAddImage(dest, img, nil); CGImageDestinationFinalize(dest)
 }
 
-func linePoints(_ x0: CGFloat, _ x1: CGFloat, _ y0: CGFloat, _ y1: CGFloat) -> [CGPoint] {
-    pts.map { CGPoint(x: x0 + (x1 - x0) * $0.0 / 0.96, y: y0 + (y1 - y0) * $0.1) }
+func back(_ c: CGContext, _ w: CGFloat, _ h: CGFloat) {
+    let g = CGGradient(colorsSpace: nil, colors: [hex(0x1A1240), hex(0x05060F)] as CFArray, locations: [0, 1])!
+    c.drawLinearGradient(g, start: .zero, end: CGPoint(x: w * 0.3, y: h), options: [.drawsBeforeStartLocation, .drawsAfterEndLocation])
 }
 
-func back(_ c: CGContext, _ w: CGFloat, _ h: CGFloat) {
-    c.setFillColor(navy); c.fill(CGRect(x: 0, y: 0, width: w, height: h))
-    c.setStrokeColor(gridC); c.setLineWidth(max(1, h / 240))
-    for i in 1..<6 { let y = h * CGFloat(i) / 6; c.move(to: CGPoint(x: 0, y: y)); c.addLine(to: CGPoint(x: w, y: y)) }
-    c.strokePath()
+func glow(_ c: CGContext, _ p: CGPoint, _ r: CGFloat, _ color: UInt32, _ a: CGFloat) {
+    let g = CGGradient(colorsSpace: nil, colors: [hex(color, a), hex(color, 0)] as CFArray, locations: [0, 1])!
+    c.drawRadialGradient(g, startCenter: p, startRadius: 0, endCenter: p, endRadius: r, options: [])
+}
+
+/// Three curves rising left to right inside `r`, faded out towards the left so the wordmark stays clear.
+func ribbons(_ c: CGContext, _ r: CGRect, fadeFrom: CGFloat, fadeTo: CGFloat) {
+    let u = r.height / 480
+    c.saveGState()
+    c.beginTransparencyLayer(auxiliaryInfo: nil)
+    for (j, color) in ribbonColors.enumerated() {
+        let jj = CGFloat(j)
+        for t in 0..<3 {
+            c.setStrokeColor(hex(color, t == 2 ? 1 : 0.18)); c.setLineWidth((t == 2 ? 7 : CGFloat(30 - t * 10)) * u); c.setLineCap(.round)
+            c.move(to: CGPoint(x: r.minX - 20 * u, y: r.minY + r.height * (0.80 - jj * 0.08)))
+            c.addCurve(to: CGPoint(x: r.maxX + 20 * u, y: r.minY + r.height * (0.22 + jj * 0.10)),
+                       control1: CGPoint(x: r.minX + r.width * 0.35, y: r.minY + r.height * (0.85 - jj * 0.05)),
+                       control2: CGPoint(x: r.minX + r.width * 0.45, y: r.minY + r.height * (0.15 + jj * 0.1)))
+            c.strokePath()
+        }
+    }
+    let dot = CGPoint(x: r.minX + r.width * 0.86, y: r.minY + r.height * 0.24)
+    glow(c, dot, 90 * u, 0xFFFFFF, 0.5)
+    c.setFillColor(white); c.fillEllipse(in: CGRect(x: dot.x - 12 * u, y: dot.y - 12 * u, width: 24 * u, height: 24 * u))
+    // Erase towards the left: fully clear before fadeFrom, untouched after fadeTo.
+    c.setBlendMode(.destinationOut)
+    let fade = CGGradient(colorsSpace: nil, colors: [white, white, rgb(255, 255, 255, 0)] as CFArray, locations: [0, fadeFrom, fadeTo])!
+    c.drawLinearGradient(fade, start: .zero, end: CGPoint(x: c.width == 0 ? 1 : CGFloat(c.width), y: 0), options: [])
+    c.endTransparencyLayer()
+    c.restoreGState()
 }
 
 func middle(_ c: CGContext, _ w: CGFloat, _ h: CGFloat) {
-    let x0 = w * 0.08, x1 = w * 0.92, p = linePoints(x0, x1, h * 0.15, h * 0.95)
-    c.setFillColor(blue); c.addLines(between: p + [CGPoint(x: x1, y: h * 0.92), CGPoint(x: x0, y: h * 0.92)]); c.closePath(); c.fillPath()
+    ribbons(c, CGRect(x: 0, y: 0, width: w, height: h), fadeFrom: 0.6, fadeTo: 0.85)
 }
 
-func text(_ c: CGContext, _ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ color: CGColor, bold: Bool = true) {
-    let font = CTFontCreateWithName((bold ? "Helvetica-Bold" : "Helvetica") as CFString, size, nil)
-    let attr = NSAttributedString(string: s, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font,
-                                                          NSAttributedString.Key(kCTForegroundColorAttributeName as String): color])
+func text(_ c: CGContext, _ s: String, _ x: CGFloat, _ y: CGFloat, _ size: CGFloat, _ color: CGColor, font: String = "Didot", kern: CGFloat = 0) {
+    let f = CTFontCreateWithName(font as CFString, size, nil)
+    let attr = NSAttributedString(string: s, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): f,
+                                                          NSAttributedString.Key(kCTForegroundColorAttributeName as String): color,
+                                                          NSAttributedString.Key(kCTKernAttributeName as String): kern])
     let line = CTLineCreateWithAttributedString(attr)
     c.saveGState(); c.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
     c.textPosition = CGPoint(x: x, y: y + size * 0.85); CTLineDraw(line, c); c.restoreGState()
 }
 
-func front(_ c: CGContext, _ w: CGFloat, _ h: CGFloat, label: Bool) {
-    let p = linePoints(w * 0.08, w * 0.92, h * 0.15, h * 0.95), lw = max(3, h / 40)
-    c.setStrokeColor(white); c.setLineWidth(lw); c.setLineJoin(.round); c.setLineCap(.round)
-    c.addLines(between: p); c.strokePath()
-    let e = p.last!, r = lw * 1.6
-    c.setFillColor(white); c.fillEllipse(in: CGRect(x: e.x - r, y: e.y - r, width: 2 * r, height: 2 * r))
-    if label { text(c, "MARKET TV", w * 0.08, h * 0.06, h * 0.13, white) }
+/// "P | ANALYTICS" over "MARKETS · DATA", like the hub's wordmark. Laid out on an 800×480 grid scaled by `u`.
+func wordmark(_ c: CGContext, _ x: CGFloat, _ y: CGFloat, _ u: CGFloat) {
+    text(c, "P", x, y + 96 * u, 250 * u, white)
+    c.setFillColor(rgb(255, 255, 255, 0.8)); c.fill(CGRect(x: x + 192 * u, y: y + 130 * u, width: 3 * u, height: 221 * u))
+    text(c, "ANALYTICS", x + 220 * u, y + 178 * u, 46 * u, white, kern: 3 * u)
+    text(c, "MARKETS · DATA", x + 222 * u, y + 250 * u, 19 * u, soft, font: "HelveticaNeue-Medium", kern: 5 * u)
+}
+
+func front(_ c: CGContext, _ w: CGFloat, _ h: CGFloat) {
+    wordmark(c, w * 0.06, 0, h / 480)
 }
 
 func stack(_ name: String, _ size: (Int, Int), _ scales: [Int]) {
@@ -82,7 +113,7 @@ func stack(_ name: String, _ size: (Int, Int), _ scales: [Int]) {
                 switch layer {
                 case "Back": back(c, w, h)
                 case "Middle": middle(c, w, h)
-                default: front(c, w, h, label: true)
+                default: front(c, w, h)
                 }
             }
             save(img, cd + "/" + file)
@@ -99,11 +130,8 @@ func shelf(_ name: String, _ size: (Int, Int)) {
         let file = "shelf" + (s == 1 ? "" : "@2x") + ".png"
         let img = render(size.0 * s, size.1 * s, opaque: true) { c, w, h in
             back(c, w, h)
-            c.saveGState(); c.translateBy(x: w * 0.38, y: 0)
-            middle(c, w * 0.6, h); front(c, w * 0.6, h, label: false)
-            c.restoreGState()
-            text(c, "Market TV", w * 0.05, h * 0.36, h * 0.16, white)
-            text(c, "US Market Health · Downturn · Today", w * 0.05, h * 0.56, h * 0.055, soft, bold: false)
+            ribbons(c, CGRect(x: w * 0.30, y: 0, width: w * 0.70, height: h), fadeFrom: 0.42, fadeTo: 0.62)
+            wordmark(c, w * 0.05, h * 0.02, h / 480 * 0.85)
         }
         save(img, dir + "/" + file)
         images.append(["filename": file, "idiom": "tv", "scale": "\(s)x"])
